@@ -20,8 +20,11 @@ along with tvfamily; see the file COPYING.  If not, see
 <http://www.gnu.org/licenses/>.
 '''
 
+import io
+import json
 import os
-import requests
+import pycurl
+import urllib.parse
 
 __author__ = 'Antonio Serrano Hernandez'
 __copyright__ = 'Copyright (C) 2018 Antonio Serrano Hernandez'
@@ -33,8 +36,7 @@ __status__ = 'Development'
 __homepage__ = 'https://github.com/aserranoh/tvfamily'
 
 
-class ServiceError(Exception):
-    pass
+class ServiceError(Exception): pass
 
 class Media(object):
     '''Represents a media to watch.'''
@@ -65,47 +67,30 @@ class Server(object):
 
     def get_profiles(self):
         '''Return the list of profiles.'''
-        return self._api_function('getprofiles')['profiles']
+        return self._api_function_get('getprofiles')['profiles']
 
     def get_profile_picture(self, name):
         '''Return an array of bytes that contains the profile picture
         (in png format).
         '''
-        return self._api_function('getprofilepicture', name=name)
+        return self._api_function_get('getprofilepicture', name=name)
 
-    def set_profile_picture(self, name, path=''):
+    def set_profile_picture(self, name, picture=None):
         '''Set a new picture for the given profile.'''
-        url = '{}/api/setprofilepicture'.format(self.address)
-        params = {'name': name}
-        try:
-            if path:
-                with open(path, 'rb') as data:
-                    r = requests.post(url, params=params, files={'file': data})
-            else:
-                r = requests.post(url, params=params, files={'file': b''})
-        except requests.exceptions.ConnectionError:
-            raise ServiceError('connection error')
-        # Process the response
-        try:
-            ret = r.json()
-            if ret['code']:
-                raise ServiceError(ret['error'])
-        except ValueError:
-            # No JSON data, protocol error
-            raise ServiceError('protocol error, response is not JSON')
+        self._api_function_post('setprofilepicture', picture, name=name)
 
-    def create_profile(self, name):
+    def create_profile(self, name, picture=None):
         '''Create a new profile with the given name.'''
-        self._api_function('createprofile', name=name)
+        self._api_function_post('createprofile', picture, name=name)
 
     def delete_profile(self, name):
         '''Delete the profile with the given name.'''
-        self._api_function('deleteprofile', name=name)
+        self._api_function_get('deleteprofile', name=name)
 
     # Categories functions
 
     def get_categories(self):
-        return self._api_function('getcategories')['categories']
+        return self._api_function_get('getcategories')['categories']
 
     # Medias functions
 
@@ -116,18 +101,52 @@ class Server(object):
 
     # Generic API function
 
-    def _api_function(self, function, **kwargs):
-        url = '{}/api/{}'.format(self.address, function)
+    def _api_function_get(self, function, **kwargs):
+        '''Get some data from the server.'''
+        buffer = io.BytesIO()
+        c = pycurl.Curl()
         try:
-            r = requests.get(url, params=kwargs)
-        except requests.exceptions.ConnectionError:
+            c.setopt(c.URL, '{}/api/{}?{}'.format(
+                self.address, function, urllib.parse.urlencode(kwargs)))
+            c.setopt(c.WRITEDATA, buffer)
+            c.perform()
+            c.close()
+        except pycurl.error as e:
             raise ServiceError('connection error')
+        body = buffer.getvalue()
         try:
-            ret = r.json()
+            ret = json.loads(body.decode('utf-8'))
             if ret['code']:
                 raise ServiceError(ret['error'])
         except ValueError:
             # No JSON data
-            ret = r.content
+            ret = body
         return ret
+
+    def _api_function_post(self, function, file_=None, **kwargs):
+        '''Send a file to the server.'''
+        buffer = io.BytesIO()
+        c = pycurl.Curl()
+        try:
+            c.setopt(c.URL, '{}/api/{}?{}'.format(
+                self.address, function, urllib.parse.urlencode(kwargs)))
+            if file_:
+                file_ = (c.FORM_FILE, file_)
+            else:
+                file_ = (c.FORM_BUFFER, 'picture', c.FORM_BUFFERPTR, b'')
+            c.setopt(c.HTTPPOST, [('file', file_)])
+            c.setopt(c.WRITEDATA, buffer)
+            c.perform()
+            c.close()
+        except pycurl.error as e:
+            raise ServiceError('connection error')
+        # Process the response
+        body = buffer.getvalue()
+        try:
+            ret = json.loads(body.decode('utf-8'))
+            if ret['code']:
+                raise ServiceError(ret['error'])
+        except ValueError:
+            # No JSON data, protocol error
+            raise ServiceError('protocol error, response is not JSON')
 

@@ -45,18 +45,6 @@ class Media(object):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    @classmethod
-    def fromdict(cls, d):
-        '''Build a media from a dictionary.'''
-        return cls(**d)
-
-    def __str__(self):
-        '''Return a string representation of this media.'''
-        try:
-            return '{} {}x{:02}'.format(self.title, self.season, self.episode)
-        except AttributeError:
-            return self.title
-
 class Server(object):
     '''Represents a tvfamily server.'''
 
@@ -94,10 +82,11 @@ class Server(object):
 
     # Medias functions
 
-    def get_top(self, category):
+    def get_top(self, profile, category):
         '''List the top medias of a given category.'''
-        d, r = self._api_function('gettop', category=category)
-        return [Media.fromdict(m) for m in d['top']]
+        response = self._api_function_get(
+            'gettop', profile=profile, category=category)
+        return [Media(**m) for m in response['top']]
 
     # Generic API function
 

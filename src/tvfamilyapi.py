@@ -1,9 +1,7 @@
 
 '''tvfamilyapi.py - API with the tvfamily web service.
 
-Copyright 2018 Antonio Serrano Hernandez
-
-This file is part of tvfamily.
+Copyright 2018 2019 Antonio Serrano Hernandez
 
 tvfamily is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,7 +25,7 @@ import pycurl
 import urllib.parse
 
 __author__ = 'Antonio Serrano Hernandez'
-__copyright__ = 'Copyright (C) 2018 Antonio Serrano Hernandez'
+__copyright__ = 'Copyright (C) 2018 2019 Antonio Serrano Hernandez'
 __version__ = '0.1'
 __license__ = 'GPL'
 __maintainer__ = 'Antonio Serrano Hernandez'
@@ -44,6 +42,28 @@ class Media(object):
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+    def __str__(self):
+        try:
+            return '{} {}x{:02}'.format(self.title, self.season, self.episode)
+        except AttributeError:
+            return self.title
+
+class Title(object):
+    '''Represents a title.'''
+
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        # Convert the seasons and episodes indexes to int
+        try:
+            seasons = self.seasons
+            new_seasons = {}
+            for sn, s in seasons.items():
+                new_episodes = dict((int(en), e) for en, e in s.items())
+                new_seasons[int(sn)] = new_episodes
+            self.seasons = new_seasons
+        except AttributeError: pass
 
 class Server(object):
     '''Represents a tvfamily server.'''
@@ -78,15 +98,30 @@ class Server(object):
     # Categories functions
 
     def get_categories(self):
+        '''Return the list of categories.'''
         return self._api_function_get('getcategories')['categories']
 
     # Medias functions
 
     def get_top(self, profile, category):
-        '''List the top medias of a given category.'''
+        '''Return the list of the top medias of a given category.'''
         response = self._api_function_get(
             'gettop', profile=profile, category=category)
         return [Media(**m) for m in response['top']]
+
+    def get_media_status(self, title_id, season=None, episode=None):
+        '''Retrieve the status of a media (downloaded, downloading, ...).'''
+        if season is not None and episode is not None:
+            kwargs = {'season': season, 'episode': episode}
+        status = self._api_function_get('getmediastatus', **kwargs)['status']
+        return MediaStatus(**status)
+
+    # Title functions
+
+    def get_title(self, title_id):
+        '''Get title information.'''
+        title = self._api_function_get('gettitle', id=title_id)['title']
+        return Title(**title)
 
     # Generic API function
 
